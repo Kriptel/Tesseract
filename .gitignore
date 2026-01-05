@@ -1,3 +1,8 @@
 .haxelib/
 .haxelsp/recording/
 dump/
+/.vscode
+/export
+hxformat.json
+/test
+test.hxml

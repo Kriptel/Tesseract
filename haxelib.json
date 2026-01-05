@@ -1,0 +1,9 @@
+{
+  "name": "tesseract",
+  "url" : "https://github.com/Kriptel/Tesseract",
+  "license": "MIT",
+  "description": "",
+  "version": "0.0.1",
+  "releasenote": "",
+  "contributors": ["Kriptel"]
+}
