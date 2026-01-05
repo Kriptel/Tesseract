@@ -18,7 +18,7 @@ class HttpServer implements IServer
 	{
 		socket = new Socket();
 		socket.bind(new Host(host), port);
-		socket.listen(100);
+		socket.listen(maxConnections);
 		Log.log('HttpServer', INFO, 'Server started on $host:$port');
 	}
 
