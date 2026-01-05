@@ -1,4 +1,8 @@
-# Tesseract
+<p align="center">
+  <img src="./logo.png" width="60%"/>
+</p>
+
+#
 
 Tesseract is a library for quickly and easily creating APIs. It provides tools for creating a bundle of HTTP servers, APIs, and databases (currently WIP).
 

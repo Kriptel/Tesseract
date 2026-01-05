@@ -1,24 +1,30 @@
 package tesseract.servers;
 
+import sys.thread.FixedThreadPool;
 import haxe.io.Bytes;
 import haxe.DynamicAccess;
 import haxe.Json;
 import sys.net.Socket;
 import sys.net.Host;
 import tesseract.interfaces.IServer;
-import sys.thread.Thread;
 
 using StringTools;
 
 class HttpServer implements IServer
 {
 	var socket:Socket;
+	var threadPool:FixedThreadPool;
 
-	public function new(host:String, port:Int, maxConnections:Int)
+	public var timeout:Float = 10;
+
+	public function new(host:String, port:Int, maxConnections:Int, ?threads:Int = 10)
 	{
+		threadPool = new FixedThreadPool(threads);
+
 		socket = new Socket();
 		socket.bind(new Host(host), port);
 		socket.listen(maxConnections);
+
 		Log.log('HttpServer', INFO, 'Server started on $host:$port');
 	}
 
@@ -27,7 +33,8 @@ class HttpServer implements IServer
 		while (true)
 		{
 			var client = socket.accept();
-			Thread.create(handleClient.bind(client));
+
+			threadPool.run(handleClient.bind(client));
 		}
 	}
 
@@ -41,6 +48,8 @@ class HttpServer implements IServer
 				client.close();
 				return;
 			}
+
+			client.setTimeout(timeout);
 
 			final firstLine = requestLine.split(" ");
 			final method = firstLine[0];
@@ -70,16 +79,12 @@ class HttpServer implements IServer
 
 			if (contentLength > 0)
 			{
-				var rawBody:String = '';
+				var rawBody:Bytes = client.input.read(contentLength);
 
-				rawBody = client.input.readString(contentLength);
-
-				var contentType = headers.getHeader('Content-Type');
-
-				switch (contentType)
+				switch (headers.getHeader('Content-Type'))
 				{
 					case 'application/json':
-						var json:DynamicAccess<Dynamic> = Json.parse(rawBody);
+						var json:DynamicAccess<Dynamic> = Json.parse(rawBody.toString());
 
 						for (k => v in json)
 						{
@@ -90,7 +95,12 @@ class HttpServer implements IServer
 
 			params['cookie'] = headers;
 
-			final result = Tesseract.get(pathOnly, params);
+			final result = switch (method)
+			{
+				case 'GET':
+					Tesseract.get(pathOnly, params);
+				default: null;
+			}
 
 			var response:Bytes = result.type == JSON ? Bytes.ofString(Json.stringify(result?.content)) : result.content;
 
@@ -100,6 +110,19 @@ class HttpServer implements IServer
 			client.output.writeString("Connection: close\r\n");
 			client.output.writeString("\r\n");
 			client.output.write(response);
+		} catch (e:Error)
+		{
+			Log.log('HttpServer', ERROR, Std.string(e));
+
+			switch (e)
+			{
+				case ENotFound:
+					error(client, "Resource not found", 404);
+				case ENullDatabase:
+					error(client, "Database connection is not initialized", 503);
+				case EMissingArg(argName):
+					error(client, 'Missing required argument: $argName', 400);
+			}
 		} catch (e)
 		{
 			try
@@ -112,16 +135,33 @@ class HttpServer implements IServer
 		client.close();
 	}
 
-	function error(client:Socket, e:Dynamic):Void
+	function error(client:Socket, message:Dynamic, code:Int = 500):Void
 	{
-		var response = Json.stringify({error: e});
+		final response:Bytes = Bytes.ofString(Json.stringify({
+			error: message
+		}));
 
-		client.output.writeString("HTTP/1.1 500 Internal Server Error\r\n");
-		client.output.writeString("Content-Type: application/json\r\n");
-		client.output.writeString("Content-Length: " + response.length + "\r\n");
-		client.output.writeString("Connection: close\r\n");
-		client.output.writeString("\r\n");
-		client.output.writeString(response);
+		var statusText = switch (code)
+		{
+			case 400: "Bad Request";
+			case 401: "Unauthorized";
+			case 404: "Not Found";
+			case 503: "Service Unavailable";
+			default: "Internal Server Error";
+		};
+
+		try
+		{
+			client.output.writeString('HTTP/1.1 $code $statusText\r\n');
+			client.output.writeString("Content-Type: application/json\r\n");
+			client.output.writeString("Content-Length: " + (response.length) + "\r\n");
+			client.output.writeString("Connection: close\r\n");
+			client.output.writeString("\r\n");
+			client.output.write(response);
+		} catch (err:Dynamic)
+		{
+			Log.log('HttpServer', ERROR, "Failed to send error response: " + Std.string(err));
+		}
 	}
 }
 
