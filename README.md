@@ -29,7 +29,7 @@ class MyAPI implements IAPI {
     // Serve a static HTML file
     @file('', 'pages/index.html') final index_html;
 
-    @folder('styles', 'styles', CSS) final scripts;
+    @folder('styles', 'styles', CSS) final styles;
 
 
     // A GET endpoint with parameters
