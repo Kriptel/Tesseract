@@ -3,7 +3,18 @@ package tesseract;
 import sys.FileSystem;
 import haxe.io.Bytes;
 
-class Folder
+@:forward
+@:forward.new
+abstract Folder(__Folder)
+{
+	@:arrayAccess
+	inline public function get(key:String):Bytes
+	{
+		return this.get(key);
+	}
+}
+
+class __Folder
 {
 	public final path:String;
 	public var files:Map<String, File>;

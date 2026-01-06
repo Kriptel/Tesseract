@@ -16,5 +16,6 @@ enum MacroError
 	EInvalidTypeMeta;
 	EInvalidFileMeta;
 	EInvalidFolderMeta;
+	EInvalidHtml;
 }
 #end

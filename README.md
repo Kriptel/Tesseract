@@ -33,8 +33,12 @@ class MyAPI implements IAPI {
     // Serve a static HTML file
     @file('', 'pages/index.html') final index_html;
 
+    @folder('pages', 'pages', HTML) final pages;
+
     @folder('styles', 'styles', CSS) final styles;
 
+    // Path, root, head and body
+    @html('main', "<!DOCTYPE html><html></html>", pages["template.html"], pages["main.html"]) final main;
 
     // A GET endpoint with parameters
     @get function addition(a:Int, b:Int, ?c:Float) {

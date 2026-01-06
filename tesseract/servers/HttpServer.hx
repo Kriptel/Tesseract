@@ -34,7 +34,10 @@ class HttpServer implements IServer
 		{
 			var client = socket.accept();
 
-			threadPool.run(handleClient.bind(client));
+			threadPool.run(() -> try
+			{
+				handleClient(client);
+			} catch (e) {});
 		}
 	}
 
@@ -125,12 +128,9 @@ class HttpServer implements IServer
 			}
 		} catch (e)
 		{
-			try
-			{
-				Log.log('HttpServer', ERROR, e.details());
+			Log.log('HttpServer', ERROR, e.details());
 
-				error(client, 'Unknown server error');
-			} catch (_) {}
+			error(client, 'Unknown server error');
 		}
 		client.close();
 	}

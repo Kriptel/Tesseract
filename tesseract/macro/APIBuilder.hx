@@ -21,10 +21,11 @@ class APIBuilder
 
 		var path:String = ExprTools.getValue(localType.meta.extract('path')[0]?.params[0] ?? macro '');
 
-		var fields = Context.getBuildFields();
+		var fields:Array<Field> = Context.getBuildFields();
 
 		final getCases = [];
 
+		final extraFields:Array<Field> = [];
 		for (field in fields)
 		{
 			var type:Expr = null;
@@ -37,6 +38,7 @@ class APIBuilder
 
 			var guard:Expr = null;
 			var contentExpr:Expr = macro $i{field.name};
+			var meta:Metadata = [];
 
 			if (field.meta.metaExists('file'))
 			{
@@ -94,8 +96,37 @@ class APIBuilder
 
 				contentExpr = macro $i{field.name}.get(folder.substr($v{folderPath.length + 1}));
 			}
+			else if (field.meta.metaExists('html'))
+			{
+				switch (field.meta.getFirstMetaNamed('html')?.params)
+				{
+					case [{expr: EConst(CString(p))}, root, head, body]:
+						contentExpr = macro $i{field.name}.render();
+						path = [macro $v{p}];
+						type ??= macro HTML;
 
-			field.meta = [];
+						meta.push({name: ":isVar", params: null, pos: curPos()});
+
+						field.kind = FProp("get", "default", macro :tesseract.render.Html);
+
+						extraFields.push(createField("get_" + field.name, [AInline, AStatic, APrivate], FFun({
+							args: [],
+							ret: macro :tesseract.render.Html,
+							expr: macro
+							{
+								if ($i{field.name} == null)
+									$i{field.name} = new tesseract.render.Html($e{root}, $e{head}, $e{body});
+
+								return $i{field.name};
+							}
+						}), field.pos));
+
+					default:
+						error(EInvalidHtml);
+				}
+			}
+
+			field.meta = meta;
 
 			type ??= macro JSON;
 
@@ -111,7 +142,7 @@ class APIBuilder
 
 			switch (field.kind)
 			{
-				case FVar(t, e):
+				case FVar(t, e), FProp(_, _, t, e):
 					getCases.push({
 						values: path,
 						guard: guard,
@@ -157,7 +188,6 @@ class APIBuilder
 							type: $e{type}
 						}
 					});
-				case FProp(get, set, t, e):
 			}
 
 			if (!field.access.contains(AStatic))
@@ -184,6 +214,8 @@ class APIBuilder
 				return null;
 			}), curPos())
 		]);
+
+		fields = fields.concat(extraFields);
 
 		return fields;
 	}
