@@ -25,7 +25,7 @@ class HttpServer implements IServer
 		socket.bind(new Host(host), port);
 		socket.listen(maxConnections);
 
-		Log.log('HttpServer', INFO, 'Server started on $host:$port');
+		Log.info('HttpServer', 'Server started on $host:$port');
 	}
 
 	public function run():Void
@@ -45,6 +45,8 @@ class HttpServer implements IServer
 	{
 		try
 		{
+			client.setTimeout(timeout);
+
 			var requestLine = client.input.readLine();
 			if (requestLine == null)
 			{
@@ -52,7 +54,9 @@ class HttpServer implements IServer
 				return;
 			}
 
-			client.setTimeout(timeout);
+			#if debug
+			Log.debug('HttpServer', requestLine);
+			#end
 
 			final firstLine = requestLine.split(" ");
 			final method = firstLine[0];
@@ -80,7 +84,7 @@ class HttpServer implements IServer
 				}
 			}
 
-			if (contentLength > 0)
+			if (method == "POST" && contentLength > 0)
 			{
 				var rawBody:Bytes = client.input.read(contentLength);
 
@@ -102,6 +106,8 @@ class HttpServer implements IServer
 			{
 				case 'GET':
 					Tesseract.get(pathOnly, params);
+				case 'POST':
+					Tesseract.get(pathOnly, params);
 				default: null;
 			}
 
@@ -115,7 +121,7 @@ class HttpServer implements IServer
 			client.output.write(response);
 		} catch (e:Error)
 		{
-			Log.log('HttpServer', ERROR, Std.string(e));
+			Log.error('HttpServer', Std.string(e));
 
 			switch (e)
 			{
@@ -128,7 +134,7 @@ class HttpServer implements IServer
 			}
 		} catch (e)
 		{
-			Log.log('HttpServer', ERROR, e.details());
+			Log.error('HttpServer', e.details());
 
 			error(client, 'Unknown server error');
 		}
@@ -160,7 +166,7 @@ class HttpServer implements IServer
 			client.output.write(response);
 		} catch (err:Dynamic)
 		{
-			Log.log('HttpServer', ERROR, "Failed to send error response: " + Std.string(err));
+			Log.error('HttpServer', "Failed to send error response: " + Std.string(err));
 		}
 	}
 }

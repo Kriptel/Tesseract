@@ -1,5 +1,6 @@
 package tesseract.macro;
 
+import haxe.macro.Context;
 import haxe.macro.Expr;
 
 class MacroTools
@@ -70,5 +71,20 @@ class MacroTools
 		}
 
 		return false;
+	}
+
+	public static macro function getDefineValueInt(key:String, defaultValue:Int):Expr
+	{
+		final v:Null<String> = Context.definedValue(key);
+
+		if (v != null)
+		{
+			return {
+				expr: EConst(CInt(v)),
+				pos: Context.currentPos()
+			}
+		}
+
+		return macro $v{defaultValue};
 	}
 }
