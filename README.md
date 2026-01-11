@@ -27,6 +27,7 @@ class Main {
     }
 }
 
+@path("api/")
 class MyAPI implements IAPI {
     @get final version:String = '0.0.1';
 
@@ -43,6 +44,11 @@ class MyAPI implements IAPI {
     // A GET endpoint with parameters
     @get function addition(a:Int, b:Int, ?c:Float) {
         return a + b + c;
+    }
+
+    // Defines a POST endpoint at 'api/foo' where 'a' is parsed from the body and 'b' from the URL query string
+    @path("foo") @post function helloWorld(a:Float, @query b:Bool) {
+        return b ? a + 100 : a;
     }
 }
 ```

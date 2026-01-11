@@ -3,7 +3,8 @@ package tesseract;
 enum Error
 {
 	ENullDatabase;
-	ENotFound;
+	ENotFound(path:String);
+	EInvalidMethod(method:String);
 	EMissingArg(argName:String);
 	#if macro
 	EMacroError(e:MacroError);
@@ -17,5 +18,9 @@ enum MacroError
 	EInvalidFileMeta;
 	EInvalidFolderMeta;
 	EInvalidHtml;
+	EInvalidKind(kind:tesseract.macro.APIBuilder.APIKind);
+	EDuplicateKindDefinition;
+	EInvalidKindMeta(meta:haxe.macro.Expr.MetadataEntry);
+	EPostMethodOnField;
 }
 #end

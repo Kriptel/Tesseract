@@ -40,7 +40,7 @@ class Database
 						} catch (e)
 						{
 							queue.add(null);
-							Log.error('Database', e.toString());
+							Log.error(Database, e.toString());
 						}
 					case Set(id, value, queue):
 						try
@@ -49,7 +49,7 @@ class Database
 						} catch (e)
 						{
 							queue.add(false);
-							Log.error('Database', e.toString());
+							Log.error(Database, e.toString());
 						}
 					case Load(file):
 						db.load(file);

@@ -1,5 +1,7 @@
 package tesseract.servers;
 
+import tesseract.Request.Address;
+import tesseract.util.Headers;
 import sys.thread.FixedThreadPool;
 import haxe.io.Bytes;
 import haxe.DynamicAccess;
@@ -25,7 +27,7 @@ class HttpServer implements IServer
 		socket.bind(new Host(host), port);
 		socket.listen(maxConnections);
 
-		Log.info('HttpServer', 'Server started on $host:$port');
+		Log.info(HttpServer, 'Server started on $host:$port');
 	}
 
 	public function run():Void
@@ -55,20 +57,34 @@ class HttpServer implements IServer
 			}
 
 			#if debug
-			Log.debug('HttpServer', requestLine);
+			Log.debug(HttpServer, requestLine);
 			#end
 
-			final firstLine = requestLine.split(" ");
-			final method = firstLine[0];
-			final path = firstLine[1].substring(1);
+			inline function formatAdress(rawAddress:{host:sys.net.Host, port:Int}):Address
+			{
+				return {
+					host: rawAddress.host.host,
+					port: rawAddress.port
+				}
+			}
+
+			final ip:Address = formatAdress(client.peer());
+			final host:Address = formatAdress(client.host());
+
+			final firstLine:Array<String> = requestLine.split(" ");
+
+			final method:String = firstLine[0];
+			final path:String = firstLine[1].substring(1);
+			final protocol:String = firstLine[2];
+
 			final pathOnly = path.indexOf('?') >= 0 ? path.substring(0, path.indexOf('?')) : path;
 			final queryStr = path.indexOf('?') >= 0 ? path.substring(path.indexOf('?') + 1) : '';
 
-			final headers = HeaderAccess.acceptHeaders(client);
+			final headers = acceptHeaders(client);
 
 			var contentLength:Int = Std.parseInt(headers.getHeader('Content-Length'));
 
-			var params:DynamicAccess<Dynamic> = {};
+			var query:DynamicAccess<String> = {};
 
 			if (queryStr.length > 0)
 			{
@@ -76,13 +92,16 @@ class HttpServer implements IServer
 				{
 					if (p.length == 0)
 						continue;
+
 					var eq = p.indexOf('=');
 					if (eq >= 0)
-						params[p.substring(0, eq)] = p.substring(eq + 1);
+						query[p.substring(0, eq)] = p.substring(eq + 1);
 					else
-						params[p] = '';
+						query[p] = '';
 				}
 			}
+
+			var body:Dynamic = null;
 
 			if (method == "POST" && contentLength > 0)
 			{
@@ -91,25 +110,11 @@ class HttpServer implements IServer
 				switch (headers.getHeader('Content-Type'))
 				{
 					case 'application/json':
-						var json:DynamicAccess<Dynamic> = Json.parse(rawBody.toString());
-
-						for (k => v in json)
-						{
-							params[k] = v;
-						}
+						body = Json.parse(rawBody.toString());
 				}
 			}
 
-			params['cookie'] = headers;
-
-			final result = switch (method)
-			{
-				case 'GET':
-					Tesseract.get(pathOnly, params);
-				case 'POST':
-					Tesseract.get(pathOnly, params);
-				default: null;
-			}
+			final result = Tesseract.handleRequest(new Request(pathOnly, method, protocol, ip, host, query, body, headers));
 
 			var response:Bytes = result.type == JSON ? Bytes.ofString(Json.stringify(result?.content)) : result.content;
 
@@ -121,21 +126,33 @@ class HttpServer implements IServer
 			client.output.write(response);
 		} catch (e:Error)
 		{
-			Log.error('HttpServer', Std.string(e));
+			Log.error(HttpServer, Std.string(e));
 
 			switch (e)
 			{
-				case ENotFound:
+				case ENotFound(_):
 					error(client, "Resource not found", 404);
 				case ENullDatabase:
 					error(client, "Database connection is not initialized", 503);
 				case EMissingArg(argName):
 					error(client, 'Missing required argument: $argName', 400);
+				case EInvalidMethod(method):
+					error(client, 'Method "$method" is not implemented', 501);
+			}
+		} catch (e:haxe.io.Error)
+		{
+			switch (e)
+			{
+				case Blocked:
+					Log.error(HttpServer, 'Blocked');
+
+				default:
+					Log.error(HttpServer, Std.string(e));
+					error(client, 'Unknown server error');
 			}
 		} catch (e)
 		{
-			Log.error('HttpServer', e.details());
-
+			Log.error(HttpServer, e.details());
 			error(client, 'Unknown server error');
 		}
 		client.close();
@@ -152,6 +169,8 @@ class HttpServer implements IServer
 			case 400: "Bad Request";
 			case 401: "Unauthorized";
 			case 404: "Not Found";
+			case 405: "Method Not Allowed";
+			case 501: "Not Implemented";
 			case 503: "Service Unavailable";
 			default: "Internal Server Error";
 		};
@@ -166,47 +185,25 @@ class HttpServer implements IServer
 			client.output.write(response);
 		} catch (err:Dynamic)
 		{
-			Log.error('HttpServer', "Failed to send error response: " + Std.string(err));
+			Log.error(HttpServer, "Failed to send error response: " + Std.string(err));
 		}
 	}
-}
 
-abstract HeaderAccess(DynamicAccess<Dynamic>) to DynamicAccess<Dynamic>
-{
-	public function new(headers:DynamicAccess<Dynamic>)
+	inline public static function acceptHeaders(client:Socket):Headers
 	{
-		this = headers;
-	}
-
-	inline public function hasHeader(h:String):Bool
-	{
-		return Reflect.hasField(abstract, h.toLowerCase());
-	}
-
-	inline public function getHeader(h:String):String
-	{
-		return hasHeader(h.toLowerCase()) ? Reflect.field(abstract, h.toLowerCase()) : null;
-	}
-
-	inline public function setHeader(h:String, v:Dynamic):Void
-	{
-		return Reflect.setField(abstract, h, v);
-	}
-
-	public static function acceptHeaders(client:Socket):HeaderAccess
-	{
-		final headers:DynamicAccess<Dynamic> = {};
+		final headers:Headers = new Headers();
 		while (true)
 		{
 			var header = client.input.readLine();
 
 			if (header == null || header.length == 0)
 				break;
+
 			var idx = header.indexOf(':');
 			if (idx >= 0)
-				headers[header.substring(0, idx).toLowerCase()] = StringTools.trim(header.substring(idx + 1));
+				headers.addHeader(header.substring(0, idx), StringTools.trim(header.substring(idx + 1)));
 		}
 
-		return new HeaderAccess(headers);
+		return headers;
 	}
 }

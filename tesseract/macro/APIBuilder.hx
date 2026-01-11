@@ -7,12 +7,15 @@ import haxe.macro.Expr;
 import haxe.macro.Context;
 import tesseract.macro.MacroTools.createField;
 import tesseract.Error;
+import tesseract.Response.ResponseType.fromFileExt;
 
 using tesseract.macro.MacroTools;
 #end
 
 class APIBuilder
 {
+	private static final kindMetas:Array<String> = ["file", "folder", "html", "get", "post"];
+
 	macro public static function build():Array<Field>
 	{
 		final localType = Context.getLocalClass().get();
@@ -23,16 +26,19 @@ class APIBuilder
 
 		var fields:Array<Field> = Context.getBuildFields();
 
-		final getCases = [];
+		final getCases:Array<Case> = [];
+		final postCases:Array<Case> = [];
 
 		final extraFields:Array<Field> = [];
+
 		for (field in fields)
 		{
-			var type:Expr = null;
-			if (field.meta.metaExists('type'))
+			var type:Expr = if (field.meta.metaExists('type'))
 			{
-				type = field.meta.getFirstMetaNamed('type')?.params[0];
+				field.meta.getFirstMetaNamed('type')?.params[0];
 			}
+			else
+				null;
 
 			var path:Array<Expr> = field.meta.getFirstMetaNamed('path')?.params;
 
@@ -40,90 +46,87 @@ class APIBuilder
 			var contentExpr:Expr = macro $i{field.name};
 			var meta:Metadata = [];
 
-			if (field.meta.metaExists('file'))
-			{
-				field.access.remove(AFinal);
-
-				var key:String = null;
-				var filepath:String = null;
-
-				switch (field.meta.getFirstMetaNamed('file')?.params)
+			final kindMeta:MetadataEntry =
 				{
-					case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}]:
-						key = k;
-						filepath = fp;
-						type ??= macro $v{tesseract.Response.ResponseType.fromFileExt(haxe.io.Path.extension(filepath))};
-
-					case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}, t]:
-						key = k;
-						filepath = fp;
-						type = t;
-
-					default:
-						error(EInvalidFileMeta);
+					final metas:Metadata = field.meta.filter(m -> kindMetas.contains(m.name));
+					if (metas.length > 1)
+						error(EDuplicateKindDefinition);
+					metas[0];
 				}
 
-				path ??= [macro $v{key}];
-
-				field.kind = FVar(macro :tesseract.File, macro new tesseract.File($v{filepath}));
-
-				contentExpr = macro $i{field.name}.get();
+			final kind:APIKind = switch (kindMeta)
+			{
+				case null: KNone;
+				case {name: 'file', params: params}:
+					switch (params)
+					{
+						case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}]:
+							KFile(k, fp, macro $v{fromFileExt(haxe.io.Path.extension(fp))});
+						case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}, t]:
+							KFile(k, fp, t);
+						default:
+							error(EInvalidFileMeta);
+					}
+				case {name: 'folder', params: params}:
+					switch (params)
+					{
+						case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}]:
+							KFolder(k, fp, null);
+						case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}, t]:
+							KFolder(k, fp, t);
+						default:
+							error(EInvalidFolderMeta);
+					}
+				case {name: 'html', params: params}:
+					switch (params)
+					{
+						case [{expr: EConst(CString(p))}, root, head, body]:
+							KHtml(p, root, head, body);
+						default: error(EInvalidHtml);
+					}
+				case {name: 'get', params: null | []}:
+					KGet;
+				case {name: 'post', params: null | []}:
+					KPost;
+				default:
+					error(EInvalidKindMeta(kindMeta));
 			}
-			else if (field.meta.metaExists('folder'))
+
+			switch (kind)
 			{
-				var key:String = "";
-				var folderPath:String = "";
+				case KFile(key, filepath, t):
+					type ??= t;
+					path ??= [macro $v{key}];
 
-				switch (field.meta.getFirstMetaNamed('folder')?.params)
-				{
-					case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}]:
-						key = k;
-						folderPath = fp;
-					case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}, t]:
-						key = k;
-						folderPath = fp;
-						type = t;
-					default:
-						error(EInvalidFolderMeta);
-				}
+					field.kind = FVar(macro :tesseract.File, macro new tesseract.File($v{filepath}));
+					contentExpr = macro $i{field.name}.get();
+				case KFolder(key, folderPath, t):
+					type ??= (t ?? macro OctetStream);
+					path = [macro folder];
 
-				path = [macro folder];
-				guard = macro StringTools.startsWith(folder, $v{key + "/"});
+					guard = macro StringTools.startsWith(folder, $v{key + "/"});
 
-				type ??= macro OctetStream;
-
-				field.kind = FVar(macro :tesseract.Folder, macro new tesseract.Folder($v{folderPath}));
-
-				contentExpr = macro $i{field.name}.get(folder.substr($v{folderPath.length + 1}));
-			}
-			else if (field.meta.metaExists('html'))
-			{
-				switch (field.meta.getFirstMetaNamed('html')?.params)
-				{
-					case [{expr: EConst(CString(p))}, root, head, body]:
-						contentExpr = macro $i{field.name}.render();
-						path = [macro $v{p}];
-						type ??= macro HTML;
-
-						meta.push({name: ":isVar", params: null, pos: curPos()});
-
-						field.kind = FProp("get", "default", macro :tesseract.render.Html);
-
-						extraFields.push(createField("get_" + field.name, [AInline, AStatic, APrivate], FFun({
-							args: [],
-							ret: macro :tesseract.render.Html,
-							expr: macro
-							{
-								if ($i{field.name} == null)
-									$i{field.name} = new tesseract.render.Html($e{root}, $e{head}, $e{body});
-
-								return $i{field.name};
-							}
-						}), field.pos));
-
-					default:
-						error(EInvalidHtml);
-				}
+					field.kind = FVar(macro :tesseract.Folder, macro new tesseract.Folder($v{folderPath}));
+					contentExpr = macro $i{field.name}.get(folder.substr($v{folderPath.length + 1}));
+				case KHtml(p, root, head, body):
+					contentExpr = macro $i{field.name}.render();
+					path = [macro $v{p}];
+					type ??= macro HTML;
+					meta.push({name: ":isVar", params: null, pos: curPos()});
+					field.kind = FProp("get", "default", macro :tesseract.render.Html);
+					extraFields.push(createField("get_" + field.name, [AInline, AStatic, APrivate], FFun({
+						args: [],
+						ret: macro :tesseract.render.Html,
+						expr: macro
+						{
+							if ($i{field.name} == null)
+								$i{field.name} = new tesseract.render.Html($e{root}, $e{head}, $e{body});
+							return $i{field.name};
+						}
+					}), field.pos));
+				case KGet:
+				case KPost:
+				case KNone:
 			}
 
 			field.meta = meta;
@@ -142,7 +145,11 @@ class APIBuilder
 
 			switch (field.kind)
 			{
+				case _ if (kind == KNone):
 				case FVar(t, e), FProp(_, _, t, e):
+					if (kind == KPost)
+						error(EPostMethodOnField);
+
 					getCases.push({
 						values: path,
 						guard: guard,
@@ -152,7 +159,7 @@ class APIBuilder
 						}
 					});
 				case FFun({args: args}):
-					getCases.push({
+					(kind != KPost ? getCases : postCases).push({
 						values: path,
 						guard: guard,
 						expr: macro {
@@ -160,26 +167,30 @@ class APIBuilder
 								{
 									args.map(arg ->
 									{
-										var argName = arg.name;
-										var type:CType = switch (arg.type)
+										var argName:String = arg.name;
+										var type:CType = arg.type;
+
+										var check:Expr = macro request.query;
+										var access:Expr = castType(macro request.query.$argName, type);
+
+										if (kind == KPost && !arg.meta.metaExists('query'))
 										{
-											case macro :Int:
-												INT;
-											case macro :Float:
-												FLOAT;
-											case macro :Bool:
-												BOOL;
-											default:
-												ANY;
+											check = macro request.body;
+											access = macro request.body.$argName;
 										}
 
-										if (arg.opt)
-											castType(macro params.$argName, type);
+										if (arg.meta.metaExists('request'))
+										{
+											arg.type = macro :tesseract.Request;
+											macro request;
+										}
+										else if (arg.opt)
+											macro $e{access};
 										else
 											macro
 											{
-												if (Reflect.hasField(params, $v{argName}))
-													$e{castType(macro params.$argName, type)};
+												if (Reflect.hasField($e{check}, $v{argName}))
+													$e{access};
 												else
 													throw tesseract.Error.EMissingArg($v{argName});
 											};
@@ -189,54 +200,62 @@ class APIBuilder
 						}
 					});
 			}
-
 			if (!field.access.contains(AStatic))
 				field.access.push(AStatic);
 		}
 
 		fields = fields.concat([
 			createField('new', [APublic], MacroTools.FFun(macro function() {}), curPos()),
-			createField('get', [APublic], MacroTools.FFun(macro function(name:String, params:Dynamic):tesseract.Response
+
+			createField('get', [APublic], MacroTools.FFun(macro function(request:tesseract.Request):tesseract.Response
 			{
-				return if (StringTools.startsWith(name, $v{path}))
-					$
-					{
-						{
-							expr: ESwitch(macro name.substr($v{path}.length), getCases, macro null),
-							pos: curPos()
-						}
-					};
+				return if (StringTools.startsWith(request.path, $v{path}))
+				{
+					$e{buildMethodSwitch(path, getCases)}
+				}
 				else
 					null;
 			}), curPos()),
-			createField('post', [APublic], MacroTools.FFun(macro function(name:String, params:Dynamic):Dynamic
+
+			createField('post', [APublic], MacroTools.FFun(macro function(request:tesseract.Request):tesseract.Response
 			{
-				return null;
+				return if (StringTools.startsWith(request.path, $v{path}))
+				{
+					$e{buildMethodSwitch(path, postCases)}
+				}
+				else
+					null;
 			}), curPos())
 		]);
-
 		fields = fields.concat(extraFields);
-
 		return fields;
 	}
 
 	#if macro
+	public static function buildMethodSwitch(path:String, cases:Array<Case>):Expr
+	{
+		return {
+			expr: ESwitch(macro request.path.substr($v{path}.length), cases, macro null),
+			pos: curPos()
+		}
+	}
+
 	public static function castType(e:Expr, type:CType)
 	{
 		return switch (type)
 		{
 			case INT:
-				macro tesseract.Tools.castInt(${e});
+				macro Std.parseInt(${e});
 			case FLOAT:
-				macro tesseract.Tools.castFloat(${e});
+				macro Std.parseFloat(${e});
 			case BOOL:
-				macro tesseract.Tools.castBool(${e});
+				macro tesseract.Tools.parseBool(${e});
 			default:
 				e;
 		}
 	}
 
-	public static function error(e:MacroError)
+	public static function error(e:MacroError):Dynamic
 	{
 		throw EMacroError(e);
 	}
@@ -244,11 +263,34 @@ class APIBuilder
 }
 
 #if macro
-private enum CType
+private enum abstract CType(Int)
 {
-	INT;
-	FLOAT;
-	BOOL;
-	ANY;
+	var INT;
+	var FLOAT;
+	var BOOL;
+	var ANY;
+
+	@:from
+	public static function fromType(t:ComplexType)
+	{
+		return switch (t)
+		{
+			case null: ANY;
+			case macro :Int: INT;
+			case macro :Float: FLOAT;
+			case macro :Bool: BOOL;
+			default: ANY;
+		}
+	}
+}
+
+enum APIKind
+{
+	KFile(key:String, path:String, type:Expr);
+	KFolder(key:String, path:String, type:Null<Expr>);
+	KHtml(path:String, root:Expr, head:Expr, body:Expr);
+	KGet;
+	KPost;
+	KNone;
 }
 #end

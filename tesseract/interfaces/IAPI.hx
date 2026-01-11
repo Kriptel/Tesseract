@@ -3,5 +3,6 @@ package tesseract.interfaces;
 @:autoBuild(tesseract.macro.APIBuilder.build())
 interface IAPI
 {
-	function get(path:String, params:Dynamic):Response;
+	function get(request:Request):Response;
+	function post(request:Request):Response;
 }
