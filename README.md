@@ -50,6 +50,12 @@ class MyAPI implements IAPI {
     @path("foo") @post function helloWorld(a:Float, @query b:Bool) {
         return b ? a + 100 : a;
     }
+
+    @path('pages/${a}/line/${b}/foo')
+	@get public function aAndB(a:Int, b:Float):String
+	{
+		return a + ',' + b;
+	}
 }
 ```
 

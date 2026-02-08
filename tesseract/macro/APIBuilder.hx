@@ -10,11 +10,13 @@ import tesseract.Error;
 import tesseract.Response.ResponseType.fromFileExt;
 
 using tesseract.macro.MacroTools;
+using Lambda;
 #end
 
 class APIBuilder
 {
 	private static final kindMetas:Array<String> = ["file", "folder", "html", "get", "post"];
+	private static final pathParamsReg:EReg = ~/\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
 
 	macro public static function build():Array<Field>
 	{
@@ -40,7 +42,13 @@ class APIBuilder
 			else
 				null;
 
-			var path:Array<Expr> = field.meta.getFirstMetaNamed('path')?.params;
+			var path:Array<Expr> = field.meta.metaExists('path') ? [
+				for (meta in field.meta.getMetaNamed('path'))
+				{
+					if (meta.params != null && meta.params[0] != null)
+						meta.params[0];
+				}
+			] : null;
 
 			var guard:Expr = null;
 			var contentExpr:Expr = macro $i{field.name};
@@ -143,6 +151,60 @@ class APIBuilder
 				path = [macro $v{field.name}];
 			}
 
+			var specialUrlPaths:Array<
+				{
+					path:Array<Expr>,
+					guard:Expr,
+					pathParams:Array<String>
+				}> = [];
+
+			if (kind == KGet || kind == KPost)
+			{
+				for (p in path.copy())
+				{
+					switch (p)
+					{
+						case {expr: EConst(CString(s, _))} if (pathParamsReg.match(s)):
+							final parts:Array<{s:String, v:Bool}> = s.split('/').map(part ->
+							{
+								if (pathParamsReg.match(part))
+								{
+									{s: pathParamsReg.matched(1), v: true}
+								}
+								else {s: part, v: false}
+							});
+
+							final pathParams = [];
+							final staticParts = [];
+							for (id => part in parts)
+							{
+								if (part.v)
+									pathParams[id] = part.s;
+								else
+									staticParts.push(macro request.pathParts[$v{id}] == $v{part.s});
+							}
+
+							var staticPartsExpr = staticParts.fold((i, r) -> macro $e{r} && $e{i}, staticParts.shift());
+
+							var g = macro request.pathParts.length == $v{parts.length} && $e{staticPartsExpr};
+
+							specialUrlPaths.push({path: [macro _], guard: g, pathParams: pathParams});
+
+							path.remove(p);
+						default:
+					}
+				}
+			}
+
+			if (path.length > 0 && field.kind.match(FFun(_)))
+			{
+				specialUrlPaths.push({
+					path: path,
+					guard: guard,
+					pathParams: null
+				});
+			}
+
 			switch (field.kind)
 			{
 				case _ if (kind == KNone):
@@ -159,46 +221,63 @@ class APIBuilder
 						}
 					});
 				case FFun({args: args}):
-					(kind != KPost ? getCases : postCases).push({
-						values: path,
-						guard: guard,
-						expr: macro {
-							content: $i{field.name}($a
-								{
-									args.map(arg ->
+					final cases = (kind != KPost ? getCases : postCases);
+
+					for (p in specialUrlPaths)
+						cases.push({
+							values: p.path,
+							guard: p.guard,
+							expr: macro {
+								content: $i{field.name}($a
 									{
-										var argName:String = arg.name;
-										var type:CType = arg.type;
-
-										var check:Expr = macro request.query;
-										var access:Expr = castType(macro request.query.$argName, type);
-
-										if (kind == KPost && !arg.meta.metaExists('query'))
+										args.map(arg ->
 										{
-											check = macro request.body;
-											access = macro request.body.$argName;
-										}
+											var argName:String = arg.name;
+											var type:CType = arg.type;
 
-										if (arg.meta.metaExists('request'))
-										{
-											arg.type = macro :tesseract.Request;
-											macro request;
-										}
-										else if (arg.opt)
-											macro $e{access};
-										else
-											macro
+											var check:Expr = macro request.query;
+											var access:Expr = castType(macro request.query.$argName, type);
+
+											if (kind == KPost && !arg.meta.metaExists('query'))
 											{
-												if (Reflect.hasField($e{check}, $v{argName}))
-													$e{access};
-												else
-													throw tesseract.Error.EMissingArg($v{argName});
-											};
-									})
-								}),
-							type: $e{type}
-						}
-					});
+												check = macro request.body;
+												access = macro request.body.$argName;
+											}
+
+											if (p.pathParams != null && p.pathParams.contains(arg.name))
+											{
+												var index = p.pathParams.indexOf(arg.name);
+
+												macro
+												{
+													final v = $e{castType(macro request.pathParts[$v{index}], type)};
+
+													if (v != null)
+														v
+													else
+														throw tesseract.Error.EInvalidPathParam(request.pathParts[$v{index}]);
+												}
+											}
+											else if (arg.meta.metaExists('request'))
+											{
+												arg.type = macro :tesseract.Request;
+												macro request;
+											}
+											else if (arg.opt)
+												macro $e{access};
+											else
+												macro
+												{
+													if (Reflect.hasField($e{check}, $v{argName}))
+														$e{access};
+													else
+														throw tesseract.Error.EMissingArg($v{argName});
+												};
+										})
+									}),
+								type: $e{type}
+							}
+						});
 			}
 			if (!field.access.contains(AStatic))
 				field.access.push(AStatic);
@@ -247,7 +326,7 @@ class APIBuilder
 			case INT:
 				macro Std.parseInt(${e});
 			case FLOAT:
-				macro Std.parseFloat(${e});
+				macro tesseract.Tools.parseFloat(${e});
 			case BOOL:
 				macro tesseract.Tools.parseBool(${e});
 			default:
@@ -257,7 +336,9 @@ class APIBuilder
 
 	public static function error(e:MacroError):Dynamic
 	{
-		throw EMacroError(e);
+		Context.error(Std.string(EMacroError(e)), curPos());
+
+		return null;
 	}
 	#end
 }
@@ -273,13 +354,18 @@ private enum abstract CType(Int)
 	@:from
 	public static function fromType(t:ComplexType)
 	{
-		return switch (t)
+		try
 		{
-			case null: ANY;
-			case macro :Int: INT;
-			case macro :Float: FLOAT;
-			case macro :Bool: BOOL;
-			default: ANY;
+			return switch (Context.followWithAbstracts(Context.resolveType(t, curPos())))
+			{
+				case TAbstract(_.get() => {name: "Int"}, _): INT;
+				case TAbstract(_.get() => {name: "Float"}, _): FLOAT;
+				case TAbstract(_.get() => {name: "Bool"}, _): BOOL;
+				default: ANY;
+			}
+		} catch (e)
+		{
+			return ANY;
 		}
 	}
 }

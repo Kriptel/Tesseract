@@ -6,6 +6,7 @@ enum Error
 	ENotFound(path:String);
 	EInvalidMethod(method:String);
 	EMissingArg(argName:String);
+	EInvalidPathParam(param:String);
 	#if macro
 	EMacroError(e:MacroError);
 	#end

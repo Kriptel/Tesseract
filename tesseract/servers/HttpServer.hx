@@ -130,7 +130,7 @@ class HttpServer implements IServer
 
 			switch (e)
 			{
-				case ENotFound(_):
+				case ENotFound(_), EInvalidPathParam(_):
 					error(client, "Resource not found", 404);
 				case ENullDatabase:
 					error(client, "Database connection is not initialized", 503);
