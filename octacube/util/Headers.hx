@@ -1,8 +1,8 @@
-package tesseract.util;
+package octacube.util;
 
 import haxe.ds.StringMap;
 
-@:allow(tesseract)
+@:allow(octacube)
 abstract Headers(StringMap<Array<String>>) from StringMap<Array<String>>
 {
 	public function new()

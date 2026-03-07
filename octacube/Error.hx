@@ -1,4 +1,4 @@
-package tesseract;
+package octacube;
 
 enum Error
 {
@@ -18,8 +18,8 @@ enum MacroError
 	EInvalidTypeMeta;
 	EInvalidFileMeta;
 	EInvalidFolderMeta;
-	EInvalidHtml;
-	EInvalidKind(kind:tesseract.macro.APIBuilder.APIKind);
+	EInvalidCompositeDecl;
+	EInvalidKind(kind:octacube.macro.APIBuilder.APIKind);
 	EDuplicateKindDefinition;
 	EInvalidKindMeta(meta:haxe.macro.Expr.MetadataEntry);
 	EPostMethodOnField;

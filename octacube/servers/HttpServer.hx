@@ -1,14 +1,14 @@
-package tesseract.servers;
+package octacube.servers;
 
-import tesseract.Request.Address;
-import tesseract.util.Headers;
+import octacube.Request.Address;
+import octacube.util.Headers;
 import sys.thread.FixedThreadPool;
 import haxe.io.Bytes;
 import haxe.DynamicAccess;
 import haxe.Json;
 import sys.net.Socket;
 import sys.net.Host;
-import tesseract.interfaces.IServer;
+import octacube.interfaces.IServer;
 
 using StringTools;
 
@@ -114,13 +114,13 @@ class HttpServer implements IServer
 				}
 			}
 
-			final result = Tesseract.handleRequest(new Request(pathOnly, method, protocol, ip, host, query, body, headers));
+			final result = Octacube.handleRequest(new Request(pathOnly, method, protocol, ip, host, query, body, headers));
 
 			var response:Bytes = result.type == JSON ? Bytes.ofString(Json.stringify(result?.content)) : result.content;
 
 			client.output.writeString("HTTP/1.1 200 OK\r\n");
 			client.output.writeString('Content-Type: ${result.type}\r\n');
-			client.output.writeString("Content-Length: " + Std.string(response.length) + "\r\n");
+			client.output.writeString("Content-Length: " + Std.string(response?.length) + "\r\n");
 			client.output.writeString("Connection: close\r\n");
 			client.output.writeString("\r\n");
 			client.output.write(response);

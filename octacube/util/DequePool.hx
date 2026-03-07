@@ -1,4 +1,4 @@
-package tesseract.util;
+package octacube.util;
 
 import sys.thread.Deque;
 import sys.thread.Mutex;
@@ -8,7 +8,7 @@ class DequePool
 	private static var pool = new Deque<Deque<Dynamic>>();
 	private static var mutex = new Mutex();
 
-	private static inline var MAX_POOL_SIZE = tesseract.macro.MacroTools.getDefineValueInt('tesseract_MAX_POOL_SIZE', 50);
+	private static inline var MAX_POOL_SIZE = octacube.macro.MacroTools.getDefineValueInt('octacube_MAX_POOL_SIZE', 50);
 	private static var currentCount = 0;
 
 	public static function get():Deque<Dynamic>

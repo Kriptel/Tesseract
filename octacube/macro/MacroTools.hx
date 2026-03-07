@@ -1,4 +1,4 @@
-package tesseract.macro;
+package octacube.macro;
 
 import haxe.macro.Context;
 import haxe.macro.Expr;
@@ -86,5 +86,15 @@ class MacroTools
 		}
 
 		return macro $v{defaultValue};
+	}
+
+	public static function combineOp(e:Expr):Expr
+	{
+		return switch (e.expr)
+		{
+			case EBinop(OpOr, e1, e2):
+				macro($e{combineOp(e1)} : octacube.render.html.HtmlBody).combine($e{combineOp(e2)});
+			default: e;
+		}
 	}
 }

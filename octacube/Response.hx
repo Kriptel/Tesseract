@@ -1,4 +1,4 @@
-package tesseract;
+package octacube;
 
 typedef Response =
 {

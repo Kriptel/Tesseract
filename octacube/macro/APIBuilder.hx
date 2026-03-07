@@ -1,21 +1,21 @@
-package tesseract.macro;
+package octacube.macro;
 
 #if macro
 import haxe.macro.ExprTools;
 import haxe.macro.Context.currentPos as curPos;
 import haxe.macro.Expr;
 import haxe.macro.Context;
-import tesseract.macro.MacroTools.createField;
-import tesseract.Error;
-import tesseract.Response.ResponseType.fromFileExt;
+import octacube.macro.MacroTools.createField;
+import octacube.Error;
+import octacube.Response.ResponseType.fromFileExt;
 
-using tesseract.macro.MacroTools;
+using octacube.macro.MacroTools;
 using Lambda;
 #end
 
 class APIBuilder
 {
-	private static final kindMetas:Array<String> = ["file", "folder", "html", "get", "post"];
+	private static final kindMetas:Array<String> = ["file", "folder", "composite", "get", "post"];
 	private static final pathParamsReg:EReg = ~/\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
 
 	macro public static function build():Array<Field>
@@ -70,8 +70,12 @@ class APIBuilder
 					{
 						case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}]:
 							KFile(k, fp, macro $v{fromFileExt(haxe.io.Path.extension(fp))});
+						case [{expr: EConst(CIdent('null'))}, {expr: EConst(CString(fp))}]:
+							KFile(null, fp, macro $v{fromFileExt(haxe.io.Path.extension(fp))});
 						case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}, t]:
 							KFile(k, fp, t);
+						case [{expr: EConst(CIdent('null'))}, {expr: EConst(CString(fp))}, t]:
+							KFile(null, fp, t);
 						default:
 							error(EInvalidFileMeta);
 					}
@@ -80,17 +84,36 @@ class APIBuilder
 					{
 						case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}]:
 							KFolder(k, fp, null);
+						case [{expr: EConst(CIdent('null'))}, {expr: EConst(CString(fp))}]:
+							KFolder(null, fp, null);
 						case [{expr: EConst(CString(k))}, {expr: EConst(CString(fp))}, t]:
 							KFolder(k, fp, t);
+						case [{expr: EConst(CIdent('null'))}, {expr: EConst(CString(fp))}, t]:
+							KFolder(null, fp, t);
 						default:
 							error(EInvalidFolderMeta);
 					}
-				case {name: 'html', params: params}:
+				case {name: 'composite', params: params}:
 					switch (params)
 					{
+						case [{expr: EConst(CString(p))}, {expr: EObjectDecl(fields)}]:
+							final fields = [for (field in fields) field.field => field.expr];
+
+							var root:Expr = fields['root'],
+								head:Expr = fields['head'],
+								body:Expr = fields['body'];
+
+							if (root == null)
+								root = head;
+							else if (head == null && root != null)
+								head = root;
+							else
+								error(EInvalidCompositeDecl);
+
+							KComposite(p, root, head, body);
 						case [{expr: EConst(CString(p))}, root, head, body]:
-							KHtml(p, root, head, body);
-						default: error(EInvalidHtml);
+							KComposite(p, root, head, body);
+						default: error(EInvalidCompositeDecl);
 					}
 				case {name: 'get', params: null | []}:
 					KGet;
@@ -106,7 +129,7 @@ class APIBuilder
 					type ??= t;
 					path ??= [macro $v{key}];
 
-					field.kind = FVar(macro :tesseract.File, macro new tesseract.File($v{filepath}));
+					field.kind = FVar(macro :octacube.File, macro new octacube.File($v{filepath}));
 					contentExpr = macro $i{field.name}.get();
 				case KFolder(key, folderPath, t):
 					type ??= (t ?? macro OctetStream);
@@ -114,21 +137,21 @@ class APIBuilder
 
 					guard = macro StringTools.startsWith(folder, $v{key + "/"});
 
-					field.kind = FVar(macro :tesseract.Folder, macro new tesseract.Folder($v{folderPath}));
+					field.kind = FVar(macro :octacube.Folder, macro new octacube.Folder($v{folderPath}));
 					contentExpr = macro $i{field.name}.get(folder.substr($v{folderPath.length + 1}));
-				case KHtml(p, root, head, body):
+				case KComposite(p, root, head, body):
 					contentExpr = macro $i{field.name}.render();
 					path = [macro $v{p}];
 					type ??= macro HTML;
 					meta.push({name: ":isVar", params: null, pos: curPos()});
-					field.kind = FProp("get", "default", macro :tesseract.render.Html);
+					field.kind = FProp("get", "default", macro :octacube.render.Html);
 					extraFields.push(createField("get_" + field.name, [AInline, AStatic, APrivate], FFun({
 						args: [],
-						ret: macro :tesseract.render.Html,
+						ret: macro :octacube.render.Html,
 						expr: macro
 						{
 							if ($i{field.name} == null)
-								$i{field.name} = new tesseract.render.Html($e{root}, $e{head}, $e{body});
+								$i{field.name} = new octacube.render.Html($e{root}, $e{head}, $e{MacroTools.combineOp(body)});
 							return $i{field.name};
 						}
 					}), field.pos));
@@ -158,8 +181,6 @@ class APIBuilder
 					pathParams:Array<String>
 				}> = [];
 
-			if (kind == KGet || kind == KPost)
-			{
 				for (p in path.copy())
 				{
 					switch (p)
@@ -194,9 +215,8 @@ class APIBuilder
 						default:
 					}
 				}
-			}
 
-			if (path.length > 0 && field.kind.match(FFun(_)))
+			if (path.length > 0)
 			{
 				specialUrlPaths.push({
 					path: path,
@@ -212,14 +232,15 @@ class APIBuilder
 					if (kind == KPost)
 						error(EPostMethodOnField);
 
-					getCases.push({
-						values: path,
-						guard: guard,
-						expr: macro {
-							content: $e{contentExpr},
-							type: $e{type}
-						}
-					});
+					for (p in specialUrlPaths)
+						getCases.push({
+							values: p.path,
+							guard: p.guard,
+							expr: macro {
+								content: $e{contentExpr},
+								type: $e{type}
+							}
+						});
 				case FFun({args: args}):
 					final cases = (kind != KPost ? getCases : postCases);
 
@@ -255,12 +276,12 @@ class APIBuilder
 													if (v != null)
 														v
 													else
-														throw tesseract.Error.EInvalidPathParam(request.pathParts[$v{index}]);
+														throw octacube.Error.EInvalidPathParam(request.pathParts[$v{index}]);
 												}
 											}
 											else if (arg.meta.metaExists('request'))
 											{
-												arg.type = macro :tesseract.Request;
+												arg.type = macro :octacube.Request;
 												macro request;
 											}
 											else if (arg.opt)
@@ -271,7 +292,7 @@ class APIBuilder
 													if (Reflect.hasField($e{check}, $v{argName}))
 														$e{access};
 													else
-														throw tesseract.Error.EMissingArg($v{argName});
+														throw octacube.Error.EMissingArg($v{argName});
 												};
 										})
 									}),
@@ -286,7 +307,7 @@ class APIBuilder
 		fields = fields.concat([
 			createField('new', [APublic], MacroTools.FFun(macro function() {}), curPos()),
 
-			createField('get', [APublic], MacroTools.FFun(macro function(request:tesseract.Request):tesseract.Response
+			createField('get', [APublic], MacroTools.FFun(macro function(request:octacube.Request):octacube.Response
 			{
 				return if (StringTools.startsWith(request.path, $v{path}))
 				{
@@ -296,7 +317,7 @@ class APIBuilder
 					null;
 			}), curPos()),
 
-			createField('post', [APublic], MacroTools.FFun(macro function(request:tesseract.Request):tesseract.Response
+			createField('post', [APublic], MacroTools.FFun(macro function(request:octacube.Request):octacube.Response
 			{
 				return if (StringTools.startsWith(request.path, $v{path}))
 				{
@@ -326,9 +347,9 @@ class APIBuilder
 			case INT:
 				macro Std.parseInt(${e});
 			case FLOAT:
-				macro tesseract.Tools.parseFloat(${e});
+				macro octacube.Tools.parseFloat(${e});
 			case BOOL:
-				macro tesseract.Tools.parseBool(${e});
+				macro octacube.Tools.parseBool(${e});
 			default:
 				e;
 		}
@@ -374,7 +395,7 @@ enum APIKind
 {
 	KFile(key:String, path:String, type:Expr);
 	KFolder(key:String, path:String, type:Null<Expr>);
-	KHtml(path:String, root:Expr, head:Expr, body:Expr);
+	KComposite(path:String, root:Expr, head:Expr, body:Expr);
 	KGet;
 	KPost;
 	KNone;

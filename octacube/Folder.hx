@@ -1,4 +1,4 @@
-package tesseract;
+package octacube;
 
 import sys.FileSystem;
 import haxe.io.Bytes;

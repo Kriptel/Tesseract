@@ -1,4 +1,4 @@
-package tesseract.render.html;
+package octacube.render.html;
 
 import haxe.io.Bytes;
 

@@ -4,7 +4,7 @@
 
 #
 
-Tesseract is a library for quickly and easily creating APIs. It provides tools for creating a bundle of HTTP servers, APIs, and databases (currently WIP).
+Octacube is a library for quickly and easily creating APIs. It provides tools for creating a bundle of HTTP servers, APIs, and databases (currently WIP).
 
 > [!WARNING] 
 > This library is in early development, so use it with caution; it is not recommended for production use.
@@ -12,14 +12,14 @@ Tesseract is a library for quickly and easily creating APIs. It provides tools f
 # Example
 
 ```haxe
-import tesseract.servers.HttpServer;
-import tesseract.Tesseract;
-import tesseract.interfaces.IAPI;
+import octacube.servers.HttpServer;
+import octacube.Octacube;
+import octacube.interfaces.IAPI;
 
 class Main {
     static public function main() {
-        // Initialize Tesseract with Server, APIs, and Database
-        Tesseract.init(
+        // Initialize Octacube with Server, APIs, and Database
+        Octacube.init(
             new HttpServer('localhost', 60000, 10), 
             [new MyAPI()], 
             null
@@ -62,4 +62,4 @@ class MyAPI implements IAPI {
 ## Install
 
 1. Installing the library: 
-	- `haxelib git Tesseract https://github.com/Kriptel/Tesseract.git`
+	- `haxelib git Octacube https://github.com/Kriptel/Octacube.git`

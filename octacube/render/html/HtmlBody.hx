@@ -1,11 +1,20 @@
-package tesseract.render.html;
+package octacube.render.html;
 
 import haxe.io.Bytes;
 
 @:forward
-@:forward.new
 abstract HtmlBody(__HtmlBody) from __HtmlBody to __HtmlBody
 {
+	inline extern overload public function new(content:String, ?templates:Map<String, HtmlBody>)
+	{
+		this = new __HtmlBody(content, templates);
+	}
+
+	inline extern overload public function new(bytes:Bytes, ?templates:Map<String, HtmlBody>)
+	{
+		this = new __HtmlBody(bytes.toString(), templates);
+	}
+
 	@:from static public function fromString(s:String):HtmlBody
 	{
 		return new HtmlBody(s);
@@ -20,6 +29,11 @@ abstract HtmlBody(__HtmlBody) from __HtmlBody to __HtmlBody
 	{
 		return new HtmlBody(f.get().toString());
 	}
+
+	@:op(a | b) public function combine(b:HtmlBody)
+	{
+		return new HtmlBody(this.openTag + '\n' + this.content + '\n' + b.content + '\n</body>');
+	}
 }
 
 class __HtmlBody
@@ -28,8 +42,9 @@ class __HtmlBody
 	public var content:String;
 
 	public static final regex:EReg = ~/(<body[^>]*>)([\s\S]*)<\/body>/i;
+	private static final templateRegex = ~/::(.+?)::/g;
 
-	public function new(content:String)
+	public function new(content:String, ?templates:Map<String, HtmlBody>)
 	{
 		if (regex.match(content))
 		{
@@ -40,6 +55,11 @@ class __HtmlBody
 		{
 			this.openTag = '<body>';
 			this.content = content;
+		}
+
+		if (templates != null)
+		{
+			replaceTemplates(templates);
 		}
 	}
 
@@ -67,5 +87,27 @@ class __HtmlBody
 	public function addCustom(customContent:String)
 	{
 		content += '\n' + customContent;
+	}
+
+	public function replaceTemplate(id:String, html:HtmlBody):HtmlBody
+	{
+		content = StringTools.replace(content, '::$id::', html.render());
+
+		return this;
+	}
+
+	public function replaceTemplates(templates:Map<String, HtmlBody>):HtmlBody
+	{
+		content = templateRegex.map(content, e ->
+		{
+			final id:String = e.matched(1);
+
+			return if (templates.exists(id))
+				templates.get(id).render();
+			else
+				e.matched(0);
+		});
+
+		return this;
 	}
 }

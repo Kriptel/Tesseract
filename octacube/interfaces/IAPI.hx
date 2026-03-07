@@ -1,6 +1,6 @@
-package tesseract.interfaces;
+package octacube.interfaces;
 
-@:autoBuild(tesseract.macro.APIBuilder.build())
+@:autoBuild(octacube.macro.APIBuilder.build())
 interface IAPI
 {
 	function get(request:Request):Response;

@@ -1,6 +1,6 @@
-package tesseract;
+package octacube;
 
-import tesseract.util.Headers;
+import octacube.util.Headers;
 
 typedef Address =
 {

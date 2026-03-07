@@ -1,4 +1,4 @@
-package tesseract.interfaces;
+package octacube.interfaces;
 
 interface IServer
 {

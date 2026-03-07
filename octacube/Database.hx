@@ -1,7 +1,7 @@
-package tesseract;
+package octacube;
 
-import tesseract.util.DequePool;
-import tesseract.interfaces.IDatabase;
+import octacube.util.DequePool;
+import octacube.interfaces.IDatabase;
 import sys.thread.Thread;
 import sys.thread.Deque;
 
@@ -18,7 +18,7 @@ class Database
 	private static var db:IDatabase;
 	private static var queue:Deque<DatabaseMessage>;
 
-	@:allow(tesseract.Tesseract)
+	@:allow(octacube.Octacube)
 	private static function init(db:IDatabase)
 	{
 		Database.db = db;

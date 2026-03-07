@@ -1,12 +1,12 @@
-package tesseract;
+package octacube;
 
-import tesseract.Database;
-import tesseract.interfaces.IDatabase;
-import tesseract.interfaces.IAPI;
-import tesseract.interfaces.IServer;
-import tesseract.Error;
+import octacube.Database;
+import octacube.interfaces.IDatabase;
+import octacube.interfaces.IAPI;
+import octacube.interfaces.IServer;
+import octacube.Error;
 
-class Tesseract
+class Octacube
 {
 	private static var apiList:Array<IAPI> = [];
 
@@ -53,8 +53,8 @@ class Tesseract
 
 		for (api in apiList)
 		{
-			if (!Tesseract.apiList.contains(api))
-				Tesseract.apiList.push(api);
+			if (!Octacube.apiList.contains(api))
+				Octacube.apiList.push(api);
 		}
 
 		server.run();

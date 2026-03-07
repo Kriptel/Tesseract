@@ -1,13 +1,13 @@
-package tesseract;
+package octacube;
 
 class Log
 {
 	inline public static function log(source:LogSource, type:LogType = INFO, message:String, ?color:LogColor = null)
 	{
 		if (color != null)
-			Sys.println('[Tesseract:$source] $color$type: $message$RESET');
+			Sys.println('[Octacube:$source] $color$type: $message$RESET');
 		else
-			Sys.println('[Tesseract:$source] $type: $message');
+			Sys.println('[Octacube:$source] $type: $message');
 	}
 
 	inline public static function info(source:LogSource, message:String)
